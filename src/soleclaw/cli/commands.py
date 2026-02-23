@@ -1,0 +1,394 @@
+from __future__ import annotations
+import asyncio
+from pathlib import Path
+
+import typer
+from rich.console import Console
+
+from ..config.schema import Config
+
+app = typer.Typer(name="soleclaw", help="soleclaw - Self-evolving AI assistant", no_args_is_help=True)
+gw_app = typer.Typer(name="gateway", help="Manage the channel gateway", no_args_is_help=True)
+sess_app = typer.Typer(name="session", help="Manage conversation sessions", no_args_is_help=True)
+app.add_typer(gw_app)
+app.add_typer(sess_app)
+console = Console()
+
+
+# -- configure command -------------------------------------------------------
+
+@app.command()
+def configure(
+    config_path: Path | None = typer.Option(None, "--config", "-c"),
+    workspace: Path | None = typer.Option(None, "--workspace", "-w"),
+):
+    """Interactive configuration wizard."""
+    from .configure import ConfigureWizard, select
+
+    ws = workspace if isinstance(workspace, Path) else Path("~/.soleclaw").expanduser()
+    wiz = ConfigureWizard(workspace=ws)
+    cfg_file = config_path or Path("~/.soleclaw/config.json").expanduser()
+    is_fresh = not cfg_file.exists()
+    existing = Config.load(config_path)
+
+    # -- 1. Model selection ----------------------------------------------------
+    CLAUDE_MODELS = [
+        {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6"},
+        {"id": "claude-opus-4-6", "name": "Claude Opus 4.6"},
+        {"id": "claude-haiku-3-5", "name": "Claude Haiku 3.5"},
+    ]
+
+    current_model = existing.agent.model
+    if current_model and not is_fresh:
+        keep = f"Keep current ({current_model})"
+        mi = select("Model:", [keep, "Change model"])
+        skip_model = mi == 0
+    else:
+        skip_model = False
+
+    if skip_model:
+        model_id = current_model
+    else:
+        labels = [f"{m['name']}  ({m['id']})" for m in CLAUDE_MODELS] + ["Custom input"]
+        mi = select("Select model:", labels)
+        if mi < len(CLAUDE_MODELS):
+            model_id = CLAUDE_MODELS[mi]["id"]
+        else:
+            model_id = typer.prompt("Model ID (e.g. claude-sonnet-4-6)")
+
+    # -- 2. Telegram channel (skippable) ---------------------------------------
+    tg_cfg = existing.channels.telegram
+    tg_token, tg_users = tg_cfg.token, tg_cfg.allowed_users
+    tg_enabled = tg_cfg.enabled
+
+    if tg_cfg.enabled and tg_cfg.token:
+        masked = tg_cfg.token[:8] + "..." if len(tg_cfg.token) > 8 else "***"
+        ti = select("Telegram:", [f"Keep current ({masked})", "Reconfigure", "Disable"])
+        if ti == 0:
+            pass
+        elif ti == 2:
+            tg_enabled, tg_token, tg_users = False, "", []
+        else:
+            tg_enabled, tg_token, tg_users = _prompt_telegram()
+    else:
+        ei = select("Enable Telegram channel?", ["Yes", "No"])
+        if ei == 0:
+            tg_enabled, tg_token, tg_users = _prompt_telegram()
+
+    # -- Save ------------------------------------------------------------------
+    config = wiz.build_config(
+        model=model_id,
+        telegram_enabled=tg_enabled, telegram_token=tg_token,
+        telegram_allowed_users=tg_users,
+    )
+    wiz.save_config(config)
+    console.print(f"\n[green]Config saved to {ws / 'config.json'}[/green]")
+
+    # -- Bootstrap (USER.md / SOUL.md) -----------------------------------------
+    from ..core.bootstrap import needs_bootstrap, run_bootstrap
+    if needs_bootstrap(ws):
+        run_bootstrap(ws)
+
+    # -- Offer to start gateway ------------------------------------------------
+    if tg_enabled:
+        from ..core.pidfile import is_gateway_running
+        if is_gateway_running(ws):
+            console.print("[dim]Gateway is already running.[/dim]")
+        else:
+            gi = select("Start gateway now?", ["Yes", "No"])
+            if gi == 0:
+                gateway_start(config_path=config_path)
+
+
+def _prompt_telegram() -> tuple[bool, str, list[str]]:
+    token = typer.prompt("Telegram bot token (from @BotFather)", hide_input=True)
+    users_raw = typer.prompt("Allowed usernames (comma-separated, empty=all)", default="")
+    users = [u.strip().lstrip("@") for u in users_raw.split(",") if u.strip()]
+    return True, token, users
+
+
+# -- main commands -----------------------------------------------------------
+
+@app.command()
+def agent(
+    message: str | None = typer.Argument(None, help="Single message (non-interactive)"),
+    config_path: Path | None = typer.Option(None, "--config", "-c"),
+):
+    """Chat with the agent."""
+    cfg_path = config_path or Path("~/.soleclaw/config.json").expanduser()
+    if not cfg_path.exists():
+        console.print("[yellow]No config found. Running configure wizard...[/yellow]")
+        configure(config_path=config_path)
+    cfg = Config.load(config_path)
+    from ..core.bootstrap import needs_bootstrap, run_bootstrap
+    if needs_bootstrap(cfg.workspace_path):
+        run_bootstrap(cfg.workspace_path)
+    asyncio.run(_agent_async(cfg, message))
+
+
+async def _agent_async(cfg: Config, message: str | None):
+    from ..core.bridge import SoleclawBridge
+
+    bridge = SoleclawBridge(cfg.workspace_path, cfg)
+
+    if message:
+        result = await bridge.oneshot(message)
+        console.print(result)
+        return
+
+    from prompt_toolkit import PromptSession
+    resume = bridge.sessions.get("cli")
+    client = await bridge.connect(resume=resume)
+    try:
+        session = PromptSession()
+        console.print("[bold]soleclaw[/bold] - type /quit to exit")
+        while True:
+            try:
+                user_input = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: session.prompt("you> ")
+                )
+            except (EOFError, KeyboardInterrupt):
+                break
+            if user_input.strip() in ("/quit", "/exit"):
+                break
+            if not user_input.strip():
+                continue
+            text, sid = await bridge.chat(client, user_input.strip())
+            if sid:
+                bridge.sessions.put("cli", sid)
+            console.print(text)
+    finally:
+        await client.disconnect()
+
+
+@sess_app.command("clear")
+def session_clear(
+    session_key: str = typer.Argument(None, help="Session to clear (e.g. telegram:5384135493). Omit for all."),
+    config_path: Path | None = typer.Option(None, "--config", "-c"),
+):
+    """Clear conversation history."""
+    from ..core.bridge import SessionStore
+    cfg = Config.load(config_path)
+    store = SessionStore(cfg.workspace_path / "sessions.json")
+
+    if session_key:
+        if store.remove(session_key):
+            console.print(f"[green]Cleared session: {session_key}[/green]")
+        else:
+            console.print(f"[yellow]Session not found: {session_key}[/yellow]")
+    else:
+        n = store.clear()
+        console.print(f"[green]Cleared {n} session(s).[/green]")
+
+
+@sess_app.command("list")
+def session_list(config_path: Path | None = typer.Option(None, "--config", "-c")):
+    """List all sessions."""
+    from ..core.bridge import SessionStore
+    cfg = Config.load(config_path)
+    store = SessionStore(cfg.workspace_path / "sessions.json")
+    sessions = store.list_all()
+    if not sessions:
+        console.print("No sessions.")
+        return
+    for key, sid in sorted(sessions.items()):
+        console.print(f"  {key}  → {sid[:16]}...")
+
+
+@app.command()
+def status(config_path: Path | None = typer.Option(None, "--config", "-c")):
+    """Show runtime and configuration status."""
+    from ..core.pidfile import is_gateway_running, read_pid
+
+    cfg = Config.load(config_path)
+    ws = cfg.workspace_path
+
+    console.print(f"[bold]Workspace:[/bold] {ws}")
+    console.print(f"[bold]Model:[/bold]     {cfg.agent.model}")
+
+    # Gateway
+    if is_gateway_running(ws):
+        console.print(f"[bold]Gateway:[/bold]  [green]running[/green] (PID {read_pid(ws)})")
+    else:
+        console.print("[bold]Gateway:[/bold]  [dim]stopped[/dim]")
+
+    # Channels
+    tg = cfg.channels.telegram
+    if tg.enabled:
+        masked = tg.token[:8] + "..." if len(tg.token) > 8 else "***"
+        users = ", ".join(tg.allowed_users) if tg.allowed_users else "all"
+        console.print(f"[bold]Telegram:[/bold] enabled (token={masked}, users={users})")
+    else:
+        console.print("[bold]Telegram:[/bold] [dim]disabled[/dim]")
+
+    # Viking
+    if cfg.viking.enabled:
+        console.print(f"[bold]Viking:[/bold]   [green]enabled[/green] ({cfg.viking.path})")
+    else:
+        console.print("[bold]Viking:[/bold]   [dim]disabled[/dim]")
+
+    # Identity
+    has_soul = (ws / "SOUL.md").exists()
+    has_user = (ws / "USER.md").exists()
+    if has_soul and has_user:
+        console.print("[bold]Identity:[/bold] [green]configured[/green] (SOUL.md + USER.md)")
+    else:
+        console.print("[bold]Identity:[/bold] [yellow]not set up[/yellow] (run: soleclaw agent)")
+
+
+# -- gateway commands --------------------------------------------------------
+
+@gw_app.command("start")
+def gateway_start(
+    config_path: Path | None = typer.Option(None, "--config", "-c"),
+    foreground: bool = typer.Option(False, "--foreground", "-f", help="Run in foreground"),
+):
+    """Start the gateway (background by default)."""
+    cfg = Config.load(config_path)
+    _stop_existing_gateway(cfg)
+
+    if foreground:
+        _setup_gateway_logging()
+        asyncio.run(_gateway_async(cfg))
+    else:
+        _daemonize(cfg)
+
+
+@gw_app.command("stop")
+def gateway_stop(config_path: Path | None = typer.Option(None, "--config", "-c")):
+    """Stop the running gateway."""
+    from ..core.pidfile import is_gateway_running
+
+    cfg = Config.load(config_path)
+    if not is_gateway_running(cfg.workspace_path):
+        console.print("[yellow]No gateway running.[/yellow]")
+        return
+    _stop_existing_gateway(cfg)
+    console.print("[green]Gateway stopped.[/green]")
+
+
+@gw_app.command("restart")
+def gateway_restart(config_path: Path | None = typer.Option(None, "--config", "-c")):
+    """Restart the gateway."""
+    cfg = Config.load(config_path)
+    _stop_existing_gateway(cfg)
+    _daemonize(cfg)
+
+
+def _stop_existing_gateway(cfg: Config) -> None:
+    from ..core.pidfile import is_gateway_running, read_pid, remove_pid
+    import os, signal, time
+
+    if is_gateway_running(cfg.workspace_path):
+        old_pid = read_pid(cfg.workspace_path)
+        console.print(f"[yellow]Stopping existing gateway (PID {old_pid})...[/yellow]")
+        try:
+            os.kill(old_pid, signal.SIGTERM)
+            time.sleep(1)
+        except OSError:
+            pass
+        remove_pid(cfg.workspace_path)
+
+
+def _setup_gateway_logging():
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+
+def _daemonize(cfg: Config):
+    import os, sys
+
+    log_file = cfg.workspace_path / "gateway.log"
+    pid = os.fork()
+    if pid > 0:
+        console.print(f"[green]Gateway started in background (PID {pid})[/green]")
+        console.print(f"[dim]Log: {log_file}[/dim]")
+        return
+
+    os.setsid()
+    sys.stdin.close()
+    out = open(log_file, "a")
+    os.dup2(out.fileno(), sys.stdout.fileno())
+    os.dup2(out.fileno(), sys.stderr.fileno())
+
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler(out)],
+    )
+    asyncio.run(_gateway_async(cfg))
+
+
+async def _gateway_async(cfg: Config):
+    import logging as _logging
+    from ..core.bridge import SoleclawBridge
+    from ..channels.manager import ChannelManager
+
+    gw_log = _logging.getLogger("soleclaw.gateway")
+    bridge = SoleclawBridge(cfg.workspace_path, cfg)
+
+    cron_service = None
+    if cfg.cron.enabled and bridge.cron_store:
+        from ..cron.service import CronService
+        cron_service = CronService(store=bridge.cron_store, bridge=bridge, bus=bridge.bus)
+
+    manager = ChannelManager(bridge.bus)
+    if cfg.channels.telegram.enabled:
+        from ..channels.telegram import TelegramChannel
+        manager.add(TelegramChannel(
+            bus=bridge.bus, token=cfg.channels.telegram.token,
+            allowed_users=cfg.channels.telegram.allowed_users,
+        ))
+
+    if not manager._channels:
+        console.print("[red]No channels enabled. Run: soleclaw configure[/red]")
+        return
+
+    async def _process_inbound():
+        while True:
+            msg = await bridge.bus.consume_inbound()
+            gw_log.debug("inbound [%s:%s] %s", msg.channel, msg.chat_id, msg.content[:200])
+            try:
+                session_key = f"{msg.channel}:{msg.chat_id}"
+                typing_active = True
+
+                async def _keep_typing():
+                    while typing_active:
+                        await manager.send_typing(msg.channel, msg.chat_id, msg.thread_id)
+                        await asyncio.sleep(4)
+
+                typing_task = asyncio.create_task(_keep_typing())
+                try:
+                    from ..tools.sdk_tools import set_channel_context
+                    set_channel_context(msg.channel, msg.chat_id, msg.thread_id)
+                    result = await bridge.oneshot(msg.content, session_key=session_key)
+                finally:
+                    typing_active = False
+                    typing_task.cancel()
+                gw_log.debug("outbound [%s:%s] %s", msg.channel, msg.chat_id, (result or "")[:200])
+                if result:
+                    from ..bus.events import OutboundMessage
+                    await bridge.bus.publish_outbound(
+                        OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, thread_id=msg.thread_id, content=result)
+                    )
+            except Exception:
+                gw_log.exception("Error processing inbound message")
+
+    from ..core.pidfile import write_pid, remove_pid
+    write_pid(cfg.workspace_path)
+    gw_log.info("Gateway started (PID %d) with %d channel(s)", __import__('os').getpid(), len(manager._channels))
+    try:
+        tasks = [_process_inbound(), manager.run()]
+        if cron_service:
+            tasks.append(cron_service.run())
+            gw_log.info("CronService enabled")
+        await asyncio.gather(*tasks)
+    finally:
+        remove_pid(cfg.workspace_path)
+        gw_log.info("Gateway stopped")

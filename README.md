@@ -1,5 +1,7 @@
 # Soleclaw
 
+![logo](./soleclaw-logo.png)
+
 A self-evolving personal AI assistant. Instead of shipping fixed tools, soleclaw **forges its own** — the agent identifies what it needs, generates the code, and integrates it into its toolkit permanently.
 
 Inspired by [nanobot](https://github.com/HKUDS/nanobot) and [openclaw](https://github.com/anthropics/openclaw). Built on [claude-agent-sdk](https://github.com/anthropics/claude-agent-sdk).

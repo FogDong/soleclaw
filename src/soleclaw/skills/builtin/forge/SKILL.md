@@ -52,15 +52,39 @@ This ensures tools can cross-reference data and the user has one place to back u
 - `list` — Show all tools in your library.
 - `remove` — Delete a tool by `name`. Use when a tool is broken or no longer needed.
 
+## Tool File Structure
+
+Every tool in `tool-library/<name>/` should have:
+- `manifest.json` — name, description, version, parameters (JSON Schema)
+- `tool.py` — `async def execute(args: dict) -> dict`
+- `SKILL.md` — tells you when and how to use this tool (loaded into your context automatically)
+- `TASK.md` — original spec (reference only)
+
+**SKILL.md format:**
+```
+---
+name: <tool-name>
+description: <one-line description>
+always: true
+---
+# <Tool Name>
+<When to use — what user intents or scenarios trigger this tool>
+<Usage: run_user_tool(name="<tool-name>", arguments='{"action": "..."}')>
+<Constraints or tips>
+```
+
+If a tool is missing SKILL.md, create one based on its manifest.json and tool.py.
+
 ## Editing Existing Tools
 
 When a tool needs a fix or enhancement, edit it directly — don't rebuild from scratch.
 
 - **Fix behavior or add features:** `Edit` on `tool-library/<name>/tool.py`
 - **Update schema** (parameters, description): `Edit` on `tool-library/<name>/manifest.json`
+- **Update usage guidance:** `Edit` on `tool-library/<name>/SKILL.md`
 - **Read current code first:** `Read` the tool.py to understand what's there before changing it
 
 **When to edit vs rebuild:**
-- User says "add a priority field to todos" → edit tool.py + manifest.json
+- User says "add a priority field to todos" → edit tool.py + manifest.json + SKILL.md
 - User says "the bookmark tool is broken" → read tool.py, find the bug, edit
 - User wants a completely different tool → rebuild with `forge_tool(action="create")`

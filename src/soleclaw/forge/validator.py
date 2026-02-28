@@ -34,4 +34,7 @@ def validate_generated_tool(tool_dir: Path) -> list[str]:
     if not hasattr(mod, "execute"):
         errors.append("tool.py missing execute() function")
 
+    if not (tool_dir / "SKILL.md").exists():
+        errors.append("Missing SKILL.md")
+
     return errors

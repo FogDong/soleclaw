@@ -29,6 +29,21 @@ Rules:
   - Table names must be prefixed with the tool name (e.g. {name}_items)
   - Create tables with IF NOT EXISTS on first use
   - NEVER store persistent data in the tool's own directory
+
+4. SKILL.md - a skill file that tells the agent when and how to use this tool.
+   Format:
+   ```
+   ---
+   name: {name}
+   description: <one-line description>
+   always: true
+   ---
+   # <Tool Name>
+   <When to use this tool — what user intents or scenarios should trigger it>
+   <Usage examples with run_user_tool(name="{name}", arguments='...')>
+   <Any constraints or tips>
+   ```
+   Keep it concise (under 30 lines). Focus on WHEN to use, not implementation details.
 """
 
 

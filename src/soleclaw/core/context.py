@@ -49,6 +49,7 @@ class ContextBuilder:
         self.workspace = workspace
         self._skills = SkillsLoader(
             workspace_skills=workspace / "skills",
+            tool_library=workspace / "tool-library",
         )
 
     @property

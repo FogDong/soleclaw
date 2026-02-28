@@ -12,6 +12,7 @@ def test_validate_good_tool(tmp_path: Path):
         "parameters": {"type": "object", "properties": {}},
     }))
     (tool_dir / "tool.py").write_text("async def execute(args: dict) -> dict:\n    return {'ok': True}\n")
+    (tool_dir / "SKILL.md").write_text("---\nname: good-tool\ndescription: works\nalways: true\n---\n# Good Tool\nUse when needed.\n")
     errors = validate_generated_tool(tool_dir)
     assert len(errors) == 0
 

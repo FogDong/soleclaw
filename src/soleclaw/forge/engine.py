@@ -36,7 +36,7 @@ Rules:
    ---
    name: {name}
    description: <one-line description>
-   always: true
+   always: false
    ---
    # <Tool Name>
    <When to use this tool — what user intents or scenarios should trigger it>

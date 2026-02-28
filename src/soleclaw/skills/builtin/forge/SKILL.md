@@ -65,7 +65,7 @@ Every tool in `tool-library/<name>/` should have:
 ---
 name: <tool-name>
 description: <one-line description>
-always: true
+always: false
 ---
 # <Tool Name>
 <When to use — what user intents or scenarios trigger this tool>

@@ -10,8 +10,10 @@ from ..config.schema import Config
 app = typer.Typer(name="soleclaw", help="soleclaw - Self-evolving AI assistant", no_args_is_help=True)
 gw_app = typer.Typer(name="gateway", help="Manage the channel gateway", no_args_is_help=True)
 sess_app = typer.Typer(name="session", help="Manage conversation sessions", no_args_is_help=True)
+prompt_app = typer.Typer(name="prompt", help="View and edit system prompt files", no_args_is_help=True)
 app.add_typer(gw_app)
 app.add_typer(sess_app)
+app.add_typer(prompt_app)
 console = Console()
 
 
@@ -234,6 +236,136 @@ def status(config_path: Path | None = typer.Option(None, "--config", "-c")):
         console.print("[bold]Identity:[/bold] [green]configured[/green] (SOUL.md + USER.md)")
     else:
         console.print("[bold]Identity:[/bold] [yellow]not set up[/yellow] (run: soleclaw agent)")
+
+
+# -- prompt commands ---------------------------------------------------------
+
+_FILE_ALIASES: dict[str, str] = {
+    "soul": "SOUL.md", "identity": "IDENTITY.md", "user": "USER.md",
+    "agents": "AGENTS.md", "tools": "TOOLS.md", "memory": "MEMORY.md",
+    "bootstrap": "BOOTSTRAP.md",
+}
+
+
+def _resolve_file(name: str) -> str:
+    return _FILE_ALIASES.get(name.lower(), name)
+
+
+@prompt_app.command("show")
+def prompt_show(config_path: Path | None = typer.Option(None, "--config", "-c")):
+    """Print the assembled system prompt."""
+    from ..core.context import ContextBuilder
+    cfg = Config.load(config_path)
+    ctx = ContextBuilder(cfg.workspace_path)
+    console.print(ctx.build_system_prompt())
+
+
+@prompt_app.command("files")
+def prompt_files(config_path: Path | None = typer.Option(None, "--config", "-c")):
+    """List all files that compose the system prompt."""
+    from ..core.context import ContextBuilder
+    cfg = Config.load(config_path)
+    ws = cfg.workspace_path
+    ctx = ContextBuilder(ws)
+
+    console.print("[bold]Workspace files:[/bold]")
+    for fname in ctx.BOOTSTRAP_FILES:
+        p = ws / fname
+        status = "[green]ok[/green]" if p.exists() else "[dim]missing[/dim]"
+        console.print(f"  {fname:20s} {status}")
+
+    console.print("\n[bold]Skills (always-on):[/bold]")
+    for name in ctx._skills.get_always_skills():
+        meta = ctx._skills.get_metadata(name)
+        source = ""
+        for s, d in ctx._skills._skill_dirs():
+            if d.name == name:
+                source = f"[dim]({s})[/dim]"
+                break
+        console.print(f"  {name:20s} {meta.get('description', '')} {source}")
+
+    lib = ws / "tool-library"
+    if lib.exists():
+        import json as _json
+        tools = [d.name for d in sorted(lib.iterdir())
+                 if d.is_dir() and (d / "manifest.json").exists()]
+        if tools:
+            console.print("\n[bold]Tool library:[/bold]")
+            for t in tools:
+                has_skill = (lib / t / "SKILL.md").exists()
+                skill_status = "[green]skill[/green]" if has_skill else "[yellow]no skill[/yellow]"
+                console.print(f"  {t:20s} {skill_status}")
+
+
+@prompt_app.command("edit")
+def prompt_edit(
+    file: str = typer.Argument(..., help="File to edit (e.g. soul, agents, user, or SOUL.md)"),
+    config_path: Path | None = typer.Option(None, "--config", "-c"),
+):
+    """Open a system prompt file in $EDITOR."""
+    import os, subprocess
+    cfg = Config.load(config_path)
+    fname = _resolve_file(file)
+    target = cfg.workspace_path / fname
+    if not target.exists():
+        console.print(f"[yellow]{fname} does not exist at {target}[/yellow]")
+        raise typer.Exit(1)
+    editor = os.environ.get("EDITOR", "vi")
+    subprocess.run([editor, str(target)])
+
+
+@prompt_app.command("diff")
+def prompt_diff(
+    file: str = typer.Argument(None, help="File to diff (omit for all)"),
+    config_path: Path | None = typer.Option(None, "--config", "-c"),
+):
+    """Show diff between current files and bootstrap templates."""
+    import difflib
+    from ..core.bootstrap import (
+        DEFAULT_SOUL, USER_TEMPLATE, IDENTITY_TEMPLATE,
+        AGENTS_TEMPLATE, TOOLS_TEMPLATE, MEMORY_TEMPLATE,
+    )
+
+    templates = {
+        "SOUL.md": DEFAULT_SOUL, "USER.md": USER_TEMPLATE,
+        "IDENTITY.md": IDENTITY_TEMPLATE, "AGENTS.md": AGENTS_TEMPLATE,
+        "TOOLS.md": TOOLS_TEMPLATE, "MEMORY.md": MEMORY_TEMPLATE,
+    }
+
+    cfg = Config.load(config_path)
+    ws = cfg.workspace_path
+    targets = {_resolve_file(file): templates[_resolve_file(file)]} if file else templates
+
+    any_diff = False
+    for fname, template in targets.items():
+        if fname not in templates:
+            console.print(f"[yellow]No template for {fname}[/yellow]")
+            continue
+        current_path = ws / fname
+        if not current_path.exists():
+            console.print(f"[dim]{fname}: not found[/dim]")
+            continue
+        current = current_path.read_text()
+        if current == template:
+            console.print(f"[dim]{fname}: unchanged[/dim]")
+            continue
+        any_diff = True
+        diff = difflib.unified_diff(
+            template.splitlines(keepends=True),
+            current.splitlines(keepends=True),
+            fromfile=f"{fname} (template)",
+            tofile=f"{fname} (current)",
+        )
+        for line in diff:
+            if line.startswith("+") and not line.startswith("+++"):
+                console.print(f"[green]{line.rstrip()}[/green]")
+            elif line.startswith("-") and not line.startswith("---"):
+                console.print(f"[red]{line.rstrip()}[/red]")
+            else:
+                console.print(line.rstrip())
+
+    if not any_diff:
+        console.print("[dim]No differences found.[/dim]")
 
 
 # -- gateway commands --------------------------------------------------------

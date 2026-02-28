@@ -4,10 +4,9 @@ from typing import Any
 
 
 class SkillsLoader:
-    def __init__(self, workspace_skills: Path | None = None, builtin_skills: Path | None = None, tool_library: Path | None = None):
+    def __init__(self, workspace_skills: Path | None = None, builtin_skills: Path | None = None):
         self.workspace_skills = workspace_skills
         self.builtin_skills = builtin_skills or Path(__file__).parent / "builtin"
-        self.tool_library = tool_library
 
     def list_skills(self) -> list[dict[str, Any]]:
         skills = []
@@ -46,10 +45,6 @@ class SkillsLoader:
         return "\n".join(lines)
 
     def _skill_dirs(self):
-        if self.tool_library and self.tool_library.exists():
-            for d in sorted(self.tool_library.iterdir()):
-                if d.is_dir() and (d / "SKILL.md").exists():
-                    yield "tool", d
         if self.workspace_skills and self.workspace_skills.exists():
             for d in sorted(self.workspace_skills.iterdir()):
                 if d.is_dir() and (d / "SKILL.md").exists():

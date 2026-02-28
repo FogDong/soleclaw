@@ -49,7 +49,6 @@ class ContextBuilder:
         self.workspace = workspace
         self._skills = SkillsLoader(
             workspace_skills=workspace / "skills",
-            tool_library=workspace / "tool-library",
         )
 
     @property
@@ -75,7 +74,12 @@ class ContextBuilder:
                 continue
         if not entries:
             return None
-        return "# Available User Tools\n\nUse run_user_tool(name, arguments) to call these:\n" + "\n".join(entries)
+        header = (
+            "# Available User Tools\n\n"
+            "Use run_user_tool(name, arguments) to call these.\n"
+            "For detailed usage, Read the tool's SKILL.md (e.g. tool-library/<name>/SKILL.md).\n"
+        )
+        return header + "\n".join(entries)
 
     def build_system_prompt(self) -> str:
         header = SYSTEM_HEADER.format(time=datetime.now().isoformat(), workspace=self.workspace)
@@ -86,7 +90,7 @@ class ContextBuilder:
         for fname in files:
             p = self.workspace / fname
             if p.exists():
-                parts.append(f"# {fname}\n\n{p.read_text().strip()}")
+                parts.append(p.read_text().strip())
         if not self.is_bootstrap:
             for name in self._skills.get_always_skills():
                 content = self._skills.load_skill(name)

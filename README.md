@@ -112,7 +112,7 @@ All tool data is stored in a shared SQLite database (`~/.soleclaw/data/store.db`
 
 ## Roadmap
 
-- **OpenViking memory** — Replace keyword-based memory search with [OpenViking](https://github.com/anthropics/OpenViking) vector search. The backend code exists (`memory/viking.py`) but requires an `~/.openviking/ov.conf` with embedding and VLM API keys. Once configured, `memory_search` upgrades from substring matching to semantic retrieval with auto-extraction from conversations.
+- **OpenViking memory** — Replace keyword-based memory search with [OpenViking](https://github.com/volcengine/OpenViking) vector search. The backend code exists (`memory/viking.py`) but requires an `~/.openviking/ov.conf` with embedding and VLM API keys. Once configured, `memory_search` upgrades from substring matching to semantic retrieval with auto-extraction from conversations.
 - **Memory consolidation** — Periodic cron job to review daily logs and curate `MEMORY.md` (long-term facts the agent always sees in context).
 - **Multi-channel** — Discord, WeChat channels.
 - **Tool sharing** — Export/import tools between soleclaw instances.

@@ -61,6 +61,19 @@ git clone <repo-url> && cd soleclaw
 uv sync --all-extras
 ```
 
+## Usage
+
+```bash
+# Run as gateway (Telegram, Slack, or both)
+soleclaw gateway start
+
+# Interactive CLI chat
+soleclaw agent
+soleclaw agent "hello"
+```
+
+See [docs/Commands.md](docs/Commands.md) for the full command reference.
+
 ## Channels
 
 **Telegram** — bot listens for messages, replies in chat.
@@ -76,19 +89,6 @@ soleclaw configure slack
 ```
 
 Requires a Slack app with Socket Mode enabled. The configure command prints a setup guide.
-
-## Usage
-
-```bash
-# Run as gateway (Telegram, Slack, or both)
-soleclaw gateway start
-
-# Interactive CLI chat
-soleclaw agent
-soleclaw agent "hello"
-```
-
-See [docs/Commands.md](docs/Commands.md) for the full command reference.
 
 ## Forge — Tool Generation
 

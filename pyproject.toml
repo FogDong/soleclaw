@@ -1,6 +1,6 @@
 [project]
 name = "soleclaw"
-version = "0.2.0"
+version = "0.1.1"
 description = "Self-evolving personal AI assistant"
 requires-python = ">=3.11"
 dependencies = [

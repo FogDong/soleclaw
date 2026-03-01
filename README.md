@@ -61,10 +61,26 @@ git clone <repo-url> && cd soleclaw
 uv sync --all-extras
 ```
 
+## Channels
+
+**Telegram** — bot listens for messages, replies in chat.
+
+```bash
+soleclaw configure telegram
+```
+
+**Slack** — watch channels via Socket Mode, reply in threads, react with emoji.
+
+```bash
+soleclaw configure slack
+```
+
+Requires a Slack app with Socket Mode enabled. The configure command prints a setup guide.
+
 ## Usage
 
 ```bash
-# Run as gateway with telegram, configure can also run gateway automatically
+# Run as gateway (Telegram, Slack, or both)
 soleclaw gateway start
 
 # Interactive CLI chat

@@ -168,9 +168,25 @@ def _update_config(config_path: Path | None, updates: dict) -> None:
     console.print(f"[green]Config saved to {cfg_file}[/green]")
 
 
+def _clear_sessions(config_path: Path | None, prefix: str) -> int:
+    cfg = Config.load(config_path)
+    sessions_path = cfg.workspace_path / "sessions.json"
+    from ..core.bridge import SessionStore
+    store = SessionStore(sessions_path)
+    return store.remove_prefix(f"{prefix}:")
+
+
 @cfg_app.command("telegram")
-def configure_telegram(config_path: Path | None = typer.Option(None, "--config", "-c")):
+def configure_telegram(
+    config_path: Path | None = typer.Option(None, "--config", "-c"),
+    reset: bool = typer.Option(False, "--reset", help="Clear Telegram config and sessions"),
+):
     """Configure Telegram channel only."""
+    if reset:
+        _update_config(config_path, {"channels.telegram": {"enabled": False, "token": "", "allowed_users": []}})
+        n = _clear_sessions(config_path, "telegram")
+        console.print(f"[yellow]Telegram config reset, {n} session(s) cleared[/yellow]")
+        return
     from .configure import select
     existing = Config.load(config_path)
     tg_cfg = existing.channels.telegram
@@ -213,8 +229,16 @@ _SLACK_SETUP_GUIDE = """\
 
 
 @cfg_app.command("slack")
-def configure_slack(config_path: Path | None = typer.Option(None, "--config", "-c")):
+def configure_slack(
+    config_path: Path | None = typer.Option(None, "--config", "-c"),
+    reset: bool = typer.Option(False, "--reset", help="Clear Slack config and sessions"),
+):
     """Configure Slack channel only."""
+    if reset:
+        _update_config(config_path, {"channels.slack": {"enabled": False, "bot_token": "", "app_token": "", "channels": [], "allowed_users": []}})
+        n = _clear_sessions(config_path, "slack")
+        console.print(f"[yellow]Slack config reset, {n} session(s) cleared[/yellow]")
+        return
     from .configure import select
     existing = Config.load(config_path)
     sl_cfg = existing.channels.slack

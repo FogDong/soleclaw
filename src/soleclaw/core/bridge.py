@@ -51,6 +51,14 @@ class SessionStore:
             return True
         return False
 
+    def remove_prefix(self, prefix: str) -> int:
+        keys = [k for k in self._data if k.startswith(prefix)]
+        for k in keys:
+            del self._data[k]
+        if keys:
+            self._save()
+        return len(keys)
+
     def clear(self) -> int:
         n = len(self._data)
         self._data.clear()

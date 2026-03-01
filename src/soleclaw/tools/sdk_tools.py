@@ -34,9 +34,9 @@ def init_tools(
     _cron_trigger_fn = cron_trigger_fn
 
 
-def set_channel_context(channel: str, chat_id: str, thread_id: str = "") -> None:
+def set_channel_context(channel: str, chat_id: str, thread_id: str = "", message_ts: str = "") -> None:
     global _channel_context
-    _channel_context = {"channel": channel, "chat_id": chat_id, "thread_id": thread_id}
+    _channel_context = {"channel": channel, "chat_id": chat_id, "thread_id": thread_id, "message_ts": message_ts}
 
 
 def _result(data: Any) -> dict[str, Any]:
@@ -250,9 +250,26 @@ async def message_send(args: dict[str, Any]) -> dict[str, Any]:
     return _result({"sent": True, "channel": channel, "chat_id": chat_id})
 
 
+@tool("message_react", "React to the current message with an emoji. Channel context is auto-injected.", {
+    "emoji": str,
+})
+async def message_react(args: dict[str, Any]) -> dict[str, Any]:
+    if not _bus:
+        return _result({"error": "Message bus not configured"})
+    channel = _channel_context.get("channel", "")
+    chat_id = _channel_context.get("chat_id", "")
+    message_ts = _channel_context.get("message_ts", "")
+    emoji = args.get("emoji", "")
+    if not channel or not chat_id or not emoji or not message_ts:
+        return _result({"error": "No channel context — can only react to inbound messages"})
+    from soleclaw.bus.events import ReactionRequest
+    await _bus.publish_reaction(ReactionRequest(channel=channel, chat_id=chat_id, emoji=emoji, message_ts=message_ts))
+    return _result({"reacted": True, "emoji": emoji})
+
+
 ALL_TOOLS = [
     forge_tool, run_user_tool,
     memory_store, memory_search,
     cron_schedule, cron_list, cron_update, cron_trigger, cron_delete,
-    message_send,
+    message_send, message_react,
 ]

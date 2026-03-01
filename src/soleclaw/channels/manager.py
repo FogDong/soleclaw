@@ -56,11 +56,26 @@ class ChannelManager:
             except Exception:
                 log.exception("Failed to send outbound on channel %s", msg.channel)
 
+    async def _reaction_loop(self) -> None:
+        while self._running:
+            try:
+                req = await asyncio.wait_for(self.bus.consume_reaction(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            ch = self._channels.get(req.channel)
+            if not ch:
+                log.warning("No channel %r for reaction", req.channel)
+                continue
+            try:
+                await ch.react(req)
+            except Exception:
+                log.exception("Failed to send reaction on channel %s", req.channel)
+
     async def run(self) -> None:
         self._running = True
         await self.start_all()
         log.info("ChannelManager running with %d channel(s)", len(self._channels))
         try:
-            await self._dispatch_loop()
+            await asyncio.gather(self._dispatch_loop(), self._reaction_loop())
         finally:
             await self.stop_all()

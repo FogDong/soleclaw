@@ -17,8 +17,17 @@ class TelegramConfig(BaseModel):
     allowed_users: list[str] = Field(default_factory=list)
 
 
+class SlackConfig(BaseModel):
+    enabled: bool = False
+    bot_token: str = ""
+    app_token: str = ""
+    channels: list[str] = Field(default_factory=list)
+    allowed_users: list[str] = Field(default_factory=list)
+
+
 class ChannelsConfig(BaseModel):
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+    slack: SlackConfig = Field(default_factory=SlackConfig)
 
 
 class ForgeConfig(BaseModel):

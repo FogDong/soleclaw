@@ -88,4 +88,4 @@ async def test_message_send_not_configured(workspace):
 
 
 def test_all_tools_count():
-    assert len(ALL_TOOLS) == 10
+    assert len(ALL_TOOLS) == 11

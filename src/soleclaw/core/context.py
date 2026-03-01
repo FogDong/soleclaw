@@ -15,8 +15,13 @@ Follow the instructions in AGENTS.md — that is your primary behavioral guide.
 
 You have tools available (Write, Edit, Read, Bash, etc.) plus custom MCP tools: \
 forge_tool, run_user_tool, memory_store, memory_search, \
-cron_schedule, cron_list, cron_update, cron_trigger, cron_delete, message_send. \
+cron_schedule, cron_list, cron_update, cron_trigger, cron_delete, \
+message_send, message_react. \
 Use them to take action. When you learn something, write it to a file immediately in the same turn.
+
+Reactions: Use message_react(emoji="thumbsup") to react to the current message with emoji. \
+channel, chat_id, and message_ts are auto-filled from context — you only need to provide emoji. \
+Use reactions naturally — acknowledge, agree, show interest — without always needing a full reply.
 
 Memory: Your conversation history is auto-saved to memory/ as daily logs (YYYY-MM-DD.md). \
 When you need to recall past conversations, search memory/ directly with Read or Bash grep.

@@ -17,7 +17,7 @@ The tool library is model-agnostic. Swap Claude for another model and every tool
 ## Architecture
 
 ```
-User (Telegram / CLI)
+User (Telegram / Slack / CLI)
   → Channel Layer
     → SoleclawBridge
       ├── ContextBuilder → system prompt (identity, memory, skills, tools)
@@ -35,7 +35,7 @@ soleclaw/
 ├── memory/         Local backend + OpenViking (optional)
 ├── cron/           Scheduled tasks (cron/every/at)
 ├── skills/         SKILL.md loader
-├── channels/       Telegram, CLI
+├── channels/       Telegram, Slack, CLI
 ├── bus/            Async message routing
 ├── config/         Pydantic config schema
 └── cli/            CLI commands (typer)
@@ -98,5 +98,5 @@ All tool data is stored in a shared SQLite database (`~/.soleclaw/data/store.db`
 
 - **OpenViking memory** — Replace keyword-based memory search with [OpenViking](https://github.com/anthropics/OpenViking) vector search. The backend code exists (`memory/viking.py`) but requires an `~/.openviking/ov.conf` with embedding and VLM API keys. Once configured, `memory_search` upgrades from substring matching to semantic retrieval with auto-extraction from conversations.
 - **Memory consolidation** — Periodic cron job to review daily logs and curate `MEMORY.md` (long-term facts the agent always sees in context).
-- **Multi-channel** — Discord, Slack, WeChat channels.
+- **Multi-channel** — Discord, WeChat channels.
 - **Tool sharing** — Export/import tools between soleclaw instances.

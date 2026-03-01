@@ -2,7 +2,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from ..bus.events import InboundMessage, OutboundMessage
+from ..bus.events import InboundMessage, OutboundMessage, ReactionRequest
 from ..bus.queue import MessageBus
 
 
@@ -23,6 +23,9 @@ class BaseChannel(ABC):
     async def send(self, msg: OutboundMessage) -> None: ...
 
     async def send_typing(self, chat_id: str, thread_id: str = "") -> None:
+        pass
+
+    async def react(self, req: ReactionRequest) -> None:
         pass
 
     async def _handle_message(self, sender_id: str, chat_id: str, content: str) -> None:

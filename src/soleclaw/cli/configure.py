@@ -84,6 +84,9 @@ class ConfigureWizard:
         self, model: str,
         telegram_enabled: bool = False, telegram_token: str = "",
         telegram_allowed_users: list[str] | None = None,
+        slack_enabled: bool = False, slack_bot_token: str = "",
+        slack_app_token: str = "", slack_channels: list[str] | None = None,
+        slack_allowed_users: list[str] | None = None,
     ) -> dict[str, Any]:
         cfg: dict[str, Any] = {
             "agent": {
@@ -91,14 +94,23 @@ class ConfigureWizard:
                 "model": model,
             },
         }
+        channels: dict[str, Any] = {}
         if telegram_enabled:
-            cfg["channels"] = {
-                "telegram": {
-                    "enabled": True,
-                    "token": telegram_token,
-                    "allowed_users": telegram_allowed_users or [],
-                },
+            channels["telegram"] = {
+                "enabled": True,
+                "token": telegram_token,
+                "allowed_users": telegram_allowed_users or [],
             }
+        if slack_enabled:
+            channels["slack"] = {
+                "enabled": True,
+                "bot_token": slack_bot_token,
+                "app_token": slack_app_token,
+                "channels": slack_channels or [],
+                "allowed_users": slack_allowed_users or [],
+            }
+        if channels:
+            cfg["channels"] = channels
         return cfg
 
     def save_config(self, config: dict[str, Any]) -> None:

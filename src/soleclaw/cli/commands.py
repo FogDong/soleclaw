@@ -11,20 +11,25 @@ app = typer.Typer(name="soleclaw", help="soleclaw - Self-evolving AI assistant",
 gw_app = typer.Typer(name="gateway", help="Manage the channel gateway", no_args_is_help=True)
 sess_app = typer.Typer(name="session", help="Manage conversation sessions", no_args_is_help=True)
 prompt_app = typer.Typer(name="prompt", help="View and edit system prompt files", no_args_is_help=True)
+cfg_app = typer.Typer(name="configure", help="Configuration wizard", invoke_without_command=True)
 app.add_typer(gw_app)
 app.add_typer(sess_app)
 app.add_typer(prompt_app)
+app.add_typer(cfg_app)
 console = Console()
 
 
 # -- configure command -------------------------------------------------------
 
-@app.command()
+@cfg_app.callback()
 def configure(
+    ctx: typer.Context,
     config_path: Path | None = typer.Option(None, "--config", "-c"),
     workspace: Path | None = typer.Option(None, "--workspace", "-w"),
 ):
-    """Interactive configuration wizard."""
+    """Interactive configuration wizard. Run without subcommand for full setup, or use 'slack'/'telegram' to configure a single channel."""
+    if ctx.invoked_subcommand is not None:
+        return
     from .configure import ConfigureWizard, select
 
     ws = workspace if isinstance(workspace, Path) else Path("~/.soleclaw").expanduser()
@@ -77,11 +82,34 @@ def configure(
         if ei == 0:
             tg_enabled, tg_token, tg_users = _prompt_telegram()
 
+    # -- 3. Slack channel (skippable) --------------------------------------------
+    sl_cfg = existing.channels.slack
+    sl_enabled = sl_cfg.enabled
+    sl_bot_token, sl_app_token = sl_cfg.bot_token, sl_cfg.app_token
+    sl_channels, sl_users = sl_cfg.channels, sl_cfg.allowed_users
+
+    if sl_cfg.enabled and sl_cfg.bot_token:
+        masked = sl_cfg.bot_token[:8] + "..." if len(sl_cfg.bot_token) > 8 else "***"
+        si = select("Slack:", [f"Keep current ({masked})", "Reconfigure", "Disable"])
+        if si == 0:
+            pass
+        elif si == 2:
+            sl_enabled, sl_bot_token, sl_app_token, sl_channels, sl_users = False, "", "", [], []
+        else:
+            sl_enabled, sl_bot_token, sl_app_token, sl_channels, sl_users = _prompt_slack()
+    else:
+        ei = select("Enable Slack channel?", ["Yes", "No"])
+        if ei == 0:
+            sl_enabled, sl_bot_token, sl_app_token, sl_channels, sl_users = _prompt_slack()
+
     # -- Save ------------------------------------------------------------------
     config = wiz.build_config(
         model=model_id,
         telegram_enabled=tg_enabled, telegram_token=tg_token,
         telegram_allowed_users=tg_users,
+        slack_enabled=sl_enabled, slack_bot_token=sl_bot_token,
+        slack_app_token=sl_app_token, slack_channels=sl_channels,
+        slack_allowed_users=sl_users,
     )
     wiz.save_config(config)
     console.print(f"\n[green]Config saved to {ws / 'config.json'}[/green]")
@@ -92,7 +120,7 @@ def configure(
         run_bootstrap(ws)
 
     # -- Offer to start gateway ------------------------------------------------
-    if tg_enabled:
+    if tg_enabled or sl_enabled:
         from ..core.pidfile import is_gateway_running
         if is_gateway_running(ws):
             console.print("[dim]Gateway is already running.[/dim]")
@@ -107,6 +135,102 @@ def _prompt_telegram() -> tuple[bool, str, list[str]]:
     users_raw = typer.prompt("Allowed usernames (comma-separated, empty=all)", default="")
     users = [u.strip().lstrip("@") for u in users_raw.split(",") if u.strip()]
     return True, token, users
+
+
+def _prompt_slack() -> tuple[bool, str, str, list[str], list[str]]:
+    bot_token = typer.prompt("Slack Bot Token (xoxb-...)", hide_input=True)
+    app_token = typer.prompt("Slack App-Level Token (xapp-...)", hide_input=True)
+    channels_raw = typer.prompt("Channel IDs to watch (comma-separated, empty=all)", default="")
+    channels = [c.strip() for c in channels_raw.split(",") if c.strip()]
+    users_raw = typer.prompt("Allowed user IDs (comma-separated, empty=all)", default="")
+    users = [u.strip() for u in users_raw.split(",") if u.strip()]
+    return True, bot_token, app_token, channels, users
+
+
+def _update_config(config_path: Path | None, updates: dict) -> None:
+    """Load existing config, merge updates, save."""
+    import json
+    cfg_file = config_path or Path("~/.soleclaw/config.json").expanduser()
+    data = {}
+    if cfg_file.exists():
+        data = json.loads(cfg_file.read_text())
+    for key, val in updates.items():
+        if "." in key:
+            parts = key.split(".")
+            d = data
+            for p in parts[:-1]:
+                d = d.setdefault(p, {})
+            d[parts[-1]] = val
+        else:
+            data[key] = val
+    cfg_file.parent.mkdir(parents=True, exist_ok=True)
+    cfg_file.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    console.print(f"[green]Config saved to {cfg_file}[/green]")
+
+
+@cfg_app.command("telegram")
+def configure_telegram(config_path: Path | None = typer.Option(None, "--config", "-c")):
+    """Configure Telegram channel only."""
+    from .configure import select
+    existing = Config.load(config_path)
+    tg_cfg = existing.channels.telegram
+
+    if tg_cfg.enabled and tg_cfg.token:
+        masked = tg_cfg.token[:8] + "..." if len(tg_cfg.token) > 8 else "***"
+        ti = select("Telegram:", [f"Keep current ({masked})", "Reconfigure", "Disable"])
+        if ti == 0:
+            return
+        elif ti == 2:
+            _update_config(config_path, {"channels.telegram": {"enabled": False, "token": "", "allowed_users": []}})
+            return
+    enabled, token, users = _prompt_telegram()
+    _update_config(config_path, {"channels.telegram": {"enabled": enabled, "token": token, "allowed_users": users}})
+
+
+_SLACK_SETUP_GUIDE = """\
+[bold]Slack Setup Guide[/bold]
+
+1. Create a Slack app at [link=https://api.slack.com/apps]api.slack.com/apps[/link]
+
+2. [bold]Socket Mode[/bold] (Settings > Socket Mode)
+   - Toggle ON
+   - Generate an App-Level Token with scope: [cyan]connections:write[/cyan]
+   - Copy the token (xapp-...)
+
+3. [bold]OAuth & Permissions[/bold] (Features > OAuth & Permissions)
+   Add these Bot Token Scopes:
+   - [cyan]chat:write[/cyan]         — send messages & thread replies
+   - [cyan]reactions:write[/cyan]    — add emoji reactions
+   - [cyan]channels:history[/cyan]   — read messages in public channels
+   Then click "Install to Workspace" and copy the Bot Token (xoxb-...)
+
+4. [bold]Event Subscriptions[/bold] (Features > Event Subscriptions)
+   - Toggle ON
+   - Under "Subscribe to bot events", add: [cyan]message.channels[/cyan]
+
+5. [bold]Invite the bot[/bold] to the channels you want it to watch
+"""
+
+
+@cfg_app.command("slack")
+def configure_slack(config_path: Path | None = typer.Option(None, "--config", "-c")):
+    """Configure Slack channel only."""
+    from .configure import select
+    existing = Config.load(config_path)
+    sl_cfg = existing.channels.slack
+
+    if sl_cfg.enabled and sl_cfg.bot_token:
+        masked = sl_cfg.bot_token[:8] + "..." if len(sl_cfg.bot_token) > 8 else "***"
+        si = select("Slack:", [f"Keep current ({masked})", "Reconfigure", "Disable"])
+        if si == 0:
+            return
+        elif si == 2:
+            _update_config(config_path, {"channels.slack": {"enabled": False, "bot_token": "", "app_token": "", "channels": [], "allowed_users": []}})
+            return
+    console.print()
+    console.print(_SLACK_SETUP_GUIDE)
+    enabled, bot_token, app_token, channels, users = _prompt_slack()
+    _update_config(config_path, {"channels.slack": {"enabled": enabled, "bot_token": bot_token, "app_token": app_token, "channels": channels, "allowed_users": users}})
 
 
 # -- main commands -----------------------------------------------------------
@@ -429,6 +553,7 @@ def _setup_gateway_logging():
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def _daemonize(cfg: Config):
@@ -454,6 +579,7 @@ def _daemonize(cfg: Config):
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(out)],
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     asyncio.run(_gateway_async(cfg))
 
 
@@ -478,6 +604,15 @@ async def _gateway_async(cfg: Config):
             allowed_users=cfg.channels.telegram.allowed_users,
         ))
 
+    if cfg.channels.slack.enabled:
+        from ..channels.slack import SlackChannel
+        manager.add(SlackChannel(
+            bus=bridge.bus, bot_token=cfg.channels.slack.bot_token,
+            app_token=cfg.channels.slack.app_token,
+            watch_channels=cfg.channels.slack.channels,
+            allowed_users=cfg.channels.slack.allowed_users,
+        ))
+
     if not manager._channels:
         console.print("[red]No channels enabled. Run: soleclaw configure[/red]")
         return
@@ -485,7 +620,7 @@ async def _gateway_async(cfg: Config):
     async def _process_inbound():
         while True:
             msg = await bridge.bus.consume_inbound()
-            gw_log.debug("inbound [%s:%s] %s", msg.channel, msg.chat_id, msg.content[:200])
+            gw_log.info("inbound [%s:%s] %s", msg.channel, msg.chat_id, msg.content)
             try:
                 session_key = f"{msg.channel}:{msg.chat_id}"
                 typing_active = True
@@ -498,12 +633,12 @@ async def _gateway_async(cfg: Config):
                 typing_task = asyncio.create_task(_keep_typing())
                 try:
                     from ..tools.sdk_tools import set_channel_context
-                    set_channel_context(msg.channel, msg.chat_id, msg.thread_id)
+                    set_channel_context(msg.channel, msg.chat_id, msg.thread_id, msg.metadata.get("message_ts", ""))
                     result = await bridge.oneshot(msg.content, session_key=session_key)
                 finally:
                     typing_active = False
                     typing_task.cancel()
-                gw_log.debug("outbound [%s:%s] %s", msg.channel, msg.chat_id, (result or "")[:200])
+                gw_log.info("outbound [%s:%s] %s", msg.channel, msg.chat_id, result or "")
                 if result:
                     from ..bus.events import OutboundMessage
                     await bridge.bus.publish_outbound(

@@ -72,6 +72,8 @@ soleclaw agent
 soleclaw agent "hello"
 ```
 
+See [docs/Commands.md](docs/Commands.md) for the full command reference.
+
 ## Forge — Tool Generation
 
 When the agent identifies a missing capability, it invokes the forge:

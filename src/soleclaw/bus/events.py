@@ -17,7 +17,7 @@ class InboundMessage:
 
     @property
     def session_key(self) -> str:
-        return f"{self.channel}:{self.chat_id}"
+        return f"{self.channel}:{self.chat_id}:{self.thread_id}" if self.thread_id else f"{self.channel}:{self.chat_id}"
 
 
 @dataclass

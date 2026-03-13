@@ -646,7 +646,7 @@ async def _gateway_async(cfg: Config):
             msg = await bridge.bus.consume_inbound()
             gw_log.info("inbound [%s:%s] %s", msg.channel, msg.chat_id, msg.content)
             try:
-                session_key = f"{msg.channel}:{msg.chat_id}"
+                session_key = f"{msg.channel}:{msg.chat_id}:{msg.thread_id}" if msg.thread_id else f"{msg.channel}:{msg.chat_id}"
                 typing_active = True
 
                 async def _keep_typing():

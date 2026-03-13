@@ -130,11 +130,12 @@ class SoleclawBridge:
     async def _run_cron_job(self, job: Any) -> None:
         """Execute a cron job directly (manual trigger). Does not touch schedule."""
         try:
+            sk = f"{job.channel}:{job.chat_id}:{job.thread_id}" if job.thread_id else f"{job.channel}:{job.chat_id}"
             if job.message_kind == "static":
                 result = job.message
             else:
                 from ..cron.service import CRON_PREAMBLE
-                result = await self.oneshot(CRON_PREAMBLE + job.message)
+                result = await self.oneshot(CRON_PREAMBLE + job.message, session_key=sk)
             if result and job.channel and job.chat_id:
                 from ..bus.events import OutboundMessage
                 await self._bus.publish_outbound(

@@ -626,6 +626,7 @@ async def _gateway_async(cfg: Config):
         manager.add(TelegramChannel(
             bus=bridge.bus, token=cfg.channels.telegram.token,
             allowed_users=cfg.channels.telegram.allowed_users,
+            media_dir=cfg.workspace_path / "media",
         ))
 
     if cfg.channels.slack.enabled:

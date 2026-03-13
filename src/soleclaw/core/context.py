@@ -23,6 +23,9 @@ Reactions: Use message_react(emoji="thumbsup") to react to the current message w
 channel, chat_id, and message_ts are auto-filled from context — you only need to provide emoji. \
 Use reactions naturally — acknowledge, agree, show interest — without always needing a full reply.
 
+Images: When you receive a message like [Image: /path/to/file.jpg], use the Read tool \
+on that path to view the image.
+
 Memory: Your conversation history is auto-saved to memory/ as daily logs (YYYY-MM-DD.md). \
 When you need to recall past conversations, search memory/ directly with Read or Bash grep.
 

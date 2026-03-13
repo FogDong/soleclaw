@@ -1,6 +1,8 @@
 from __future__ import annotations
 import logging
 import re
+from datetime import datetime
+from pathlib import Path
 
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
@@ -56,10 +58,11 @@ def _markdown_to_html(text: str) -> str:
 class TelegramChannel(BaseChannel):
     name = "telegram"
 
-    def __init__(self, bus: MessageBus, token: str, allowed_users: list[str]):
+    def __init__(self, bus: MessageBus, token: str, allowed_users: list[str], media_dir: Path | None = None):
         super().__init__(config=None, bus=bus)
         self._token = token
         self._allowed_users = set(allowed_users) if allowed_users else set()
+        self._media_dir = media_dir
         self._app: Application | None = None
 
     def _is_allowed(self, username: str) -> bool:
@@ -67,16 +70,40 @@ class TelegramChannel(BaseChannel):
             return True
         return username in self._allowed_users
 
+    async def _download_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
+        if not self._media_dir or not update.message or not update.message.photo:
+            return None
+        photo = update.message.photo[-1]
+        try:
+            f = await context.bot.get_file(photo.file_id)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            path = self._media_dir / f"{ts}_{photo.file_unique_id}.jpg"
+            self._media_dir.mkdir(parents=True, exist_ok=True)
+            await f.download_to_drive(path)
+            logger.debug("Downloaded photo to %s", path)
+            return str(path)
+        except Exception:
+            logger.exception("Failed to download photo")
+            return None
+
     async def _handle_tg_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         if not user or not self._is_allowed(user.username or ""):
             logger.debug("Ignored message from %s", user)
             return
-
-        if not update.message or not update.message.text:
+        if not update.message:
             return
 
-        text = update.message.text
+        photo_path = await self._download_photo(update, context)
+        text = update.message.text or update.message.caption or ""
+        media: list[str] = []
+
+        if photo_path:
+            media.append(photo_path)
+            text = f"[Image: {photo_path}]\n\n{text}" if text else f"[Image: {photo_path}]"
+        elif not text:
+            return
+
         reply = update.message.reply_to_message
         if reply and reply.text:
             sender_name = reply.from_user.first_name if reply.from_user else "Unknown"
@@ -87,7 +114,7 @@ class TelegramChannel(BaseChannel):
         sender = user.username or ""
         logger.debug("Telegram inbound: chat=%s thread=%s user=%s text=%s", chat_id, thread_id, sender, text[:100])
 
-        msg = InboundMessage(channel=self.name, sender_id=sender, chat_id=chat_id, content=text, thread_id=thread_id)
+        msg = InboundMessage(channel=self.name, sender_id=sender, chat_id=chat_id, content=text, thread_id=thread_id, media=media)
         await self.bus.publish_inbound(msg)
 
     async def send_typing(self, chat_id: str, thread_id: str = "") -> None:
@@ -126,7 +153,7 @@ class TelegramChannel(BaseChannel):
 
     async def start(self) -> None:
         self._app = Application.builder().token(self._token).build()
-        self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_tg_message))
+        self._app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, self._handle_tg_message))
         await self._app.initialize()
         await self._app.start()
         await self._app.updater.start_polling(

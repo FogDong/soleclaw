@@ -45,19 +45,7 @@ class CronJob:
     def new_id() -> str:
         return uuid.uuid4().hex[:12]
 
-    def summary(self) -> dict[str, str]:
-        s: dict[str, str] = {
-            "id": self.id,
-            "name": self.name,
-            "schedule": f"{self.schedule_kind}:{self.schedule_value}",
-            "tz": self.schedule_tz,
-            "message_kind": self.message_kind or "agent",
-            "enabled": str(self.enabled),
-            "next_run_at": self.next_run_at,
-            "last_run_at": self.last_run_at,
-        }
-        if self.last_run_status:
-            s["last_status"] = self.last_run_status
-        if self.consecutive_errors > 0:
-            s["consecutive_errors"] = str(self.consecutive_errors)
+    def summary(self) -> dict[str, Any]:
+        s: dict[str, Any] = self.to_dict()
+        s.pop("running_at", None)
         return s

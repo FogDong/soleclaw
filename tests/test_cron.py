@@ -181,8 +181,8 @@ def test_cronjob_new_fields():
 def test_cronjob_summary_with_errors():
     job = _make_job(last_run_status="error", consecutive_errors=3)
     s = job.summary()
-    assert s["last_status"] == "error"
-    assert s["consecutive_errors"] == "3"
+    assert s["last_run_status"] == "error"
+    assert s["consecutive_errors"] == 3
 
 
 def test_cronjob_to_dict_roundtrip():
